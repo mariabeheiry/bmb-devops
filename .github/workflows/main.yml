@@ -1,0 +1,71 @@
+name: CI/CD Pipeline
+
+on:
+  push:
+    branches:
+      - main
+
+# Required for GitHub Container Registry authentication
+permissions:
+  packages: write
+  contents: read
+
+jobs:
+  test:
+    name: Continuous Integration
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+        
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          
+      - name: Install Dependencies
+        run: pip install -r requirements.txt
+
+      - name: Lint with Flake8
+        run: |
+          pip install flake8
+          # stop the build if there are Python syntax errors or undefined names
+          flake8 . --count --select=E9,F63,F7,F82 --show-source --statistics
+          # exit-zero treats all errors as warnings.
+          flake8 . --count --exit-zero --max-complexity=10 --max-line-length=127 --statistics
+        
+      - name: Run Tests
+        run: pytest
+
+  build-and-push:
+    name: Build and Push Docker Image
+    needs: test # Waits for the test job to pass
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+        
+      # Required to enable the advanced 'gha' caching feature
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+        
+      - name: Log in to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+          
+      - name: Build and Push Image
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          push: true
+          # GitHub usernames and repo names must be lowercase
+          tags: ghcr.io/${{ github.repository }}/bmb-devops:latest
+          # Pulls cache from GitHub Actions infrastructure
+          cache-from: type=gha
+          # Pushes new cache to GitHub Actions infrastructure
+          cache-to: type=gha,mode=max
